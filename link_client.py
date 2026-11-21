@@ -13,12 +13,19 @@ import sys
 import threading
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-_LIB_CANDIDATES = (
-    os.path.join(_HERE, "link-lib", "abl_link.dll"),
-    os.path.join(_HERE, "link-lib", "libabl_link.dll"),
-    os.path.join(_HERE, "link-lib", "libabl_link.dylib"),
-    os.path.join(_HERE, "link-lib", "libabl_link.so"),
-)
+if sys.platform.startswith("win"):
+    _LIB_CANDIDATES = (
+        os.path.join(_HERE, "link-lib", "abl_link.dll"),
+        os.path.join(_HERE, "link-lib", "libabl_link.dll"),
+    )
+elif sys.platform == "darwin":
+    _LIB_CANDIDATES = (
+        os.path.join(_HERE, "link-lib", "libabl_link.dylib"),
+    )
+else:
+    _LIB_CANDIDATES = (
+        os.path.join(_HERE, "link-lib", "libabl_link.so"),
+    )
 
 
 class _AblLink(ctypes.Structure):
