@@ -1,0 +1,107 @@
+"""Persistance simple de la configuration de l'appli (fichier JSON local).
+
+Objectif : le batteur ne doit rien régler. Une fois le mode et le décalage
+de latence choisis (par la personne qui gère Ableton Live), ils sont
+mémorisés et rechargés automatiquement au prochain lancement.
+"""
+from __future__ import annotations
+
+import json
+import os
+
+_CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+
+DEFAULT_HUI_TRACK_MAPPING = [0, 1, 2, 3, 4, 7, 8, 10, 11, 12, 13, 14, -1, -1, -1, -1]
+
+DEFAULTS = {
+    "mode": "link",  # "link" ou "midi"
+    "midi_port": "",
+    "beats_per_bar": 4,
+    "web_port": 8765,
+    "midi_clock_port": "Yamaha 01V96-1",
+    "hui_port": "Yamaha 01V96-3",
+    "hui_port_2": "Yamaha 01V96-4",
+    # YAMAHA 01V96 (Note On canal 1) : G-2 pour -1, Sol#-2 pour +1.
+    "controller_map_minus": ["note", 0, 7],
+    "controller_map_plus": ["note", 0, 8],
+    # F#-2 pour la scène suivante (DOWN), F-2 pour la scène précédente (UP).
+    "controller_map_scene_prev": ["note", 0, 5],
+    "controller_map_scene_next": ["note", 0, 6],
+    # C#-2 pour Stop, D-2 pour Lancer la scène (Play).
+    "controller_map_stop": ["note", 0, 1],
+    "controller_map_play": ["note", 0, 2],
+    # D#-2 pour activer/désactiver notre métronome audio local (voir
+    # audio_metronome.py) — ne commande plus le métronome interne de Live.
+    "controller_map_metronome": ["note", 0, 3],
+    # E-2 (note 4) active/désactive la boucle définie par la colonne LOOP.
+    # M2 reste commandé uniquement depuis son bouton dans l'interface.
+    "controller_map_loop": ["note", 0, 4],
+    # Carte son et canaux physiques pour le métronome audio local.
+    # "" = périphérique par défaut ; output_channel = premier canal (1-based).
+    "metronome_audio_device": "",
+    "metronome_audio_channels": 2,
+    "metronome_audio_output_channel": 1,
+    # Dossier de sons de clic (sounds/<kit>/click.wav + click_up.wav), voir
+    # audio_metronome.list_kits().
+    "metronome_kit": "Kit1",
+    # Compensation de latence du clic audio local (ms, +/-) : positif =
+    # déclenche le clic plus tôt (compense la latence de la carte son/de
+    # l'ampli).
+    "metronome_audio_latency_ms": 10,
+    # Deuxième sortie métronome (2e carte son + kit + latence), jouée en
+    # parallèle de la première quand activée (2 musiciens, clics différents).
+    "metronome_audio_device_2": "",
+    "metronome_audio_channels_2": 2,
+    "metronome_audio_output_channel_2": 1,
+    "metronome_kit_2": "Kit1",
+    "metronome_audio_latency_ms_2": 10,
+    # Volume commun aux deux sorties du métronome (pourcentage).
+    "metronome_audio_volume": 100,
+    # Live 1-5 -> console 1-5 ; Live 6-12 -> console 8,9,11-15.
+    # Console 16 reste réservée au tempo ; Live 13-16 sont non affectées.
+    "hui_track_mapping": list(DEFAULT_HUI_TRACK_MAPPING),
+    # Plage du fader 16 dédié au tempo : "3"/"6"/"10"/"20"/"100" (pourcentage
+    # autour du tempo de référence).
+    "tempo_fader_range": "6",
+    # Affichage réduit (points uniquement, sans chiffres).
+    "dots_only": False,
+    "offline_bpm": 120.0,
+    # Réduit de 50% et remonte en haut les chiffres/points pour laisser de
+    # la place au défilement des paroles (voir beat_display._update_display).
+    "lyrics_enabled": False,
+    # Hauteur du défilement des paroles (fraction 0..1 depuis le haut de sa
+    # zone), réglable en direct via le curseur de l'interface.
+    "lyrics_reading_position_ratio": 0.28,
+}
+
+
+def load_config() -> dict:
+    config = dict(DEFAULTS)
+    try:
+        with open(_CONFIG_PATH, "r", encoding="utf-8") as handle:
+            config.update(json.load(handle))
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+    for kit_key in ("metronome_kit", "metronome_kit_2"):
+        if config.get(kit_key) == "Silence":
+            config[kit_key] = "Inactif"
+    # Migration des anciens mappings : M2 n'est plus piloté en MIDI et la
+    # note 3 appartient à M1. Corrige aussi un ancien conflit enregistré où
+    # M1 partageait la note 1/2 avec Stop ou Play.
+    config.pop("controller_map_metronome_2", None)
+    protected = {
+        tuple(config.get("controller_map_stop") or ()),
+        tuple(config.get("controller_map_play") or ()),
+        tuple(config.get("controller_map_loop") or ()),
+    }
+    if tuple(config.get("controller_map_metronome") or ()) in protected:
+        config["controller_map_metronome"] = list(DEFAULTS["controller_map_metronome"])
+    return config
+
+
+def save_config(config: dict) -> None:
+    try:
+        with open(_CONFIG_PATH, "w", encoding="utf-8") as handle:
+            json.dump(config, handle, indent=2, ensure_ascii=False)
+    except OSError:
+        pass
